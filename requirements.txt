@@ -1,0 +1,57 @@
+# ── Core ──────────────────────────────────────────────────
+Django==6.0.6
+django-ninja==1.6.2
+python-decouple==3.8
+dj-database-url==2.2.0
+asgiref==3.11.1
+sqlparse==0.5.5
+
+# ── Database ───────────────────────────────────────────────
+psycopg2-binary==2.9.12
+
+# ── Async / Queue ─────────────────────────────────────────
+celery==5.6.3
+kombu==5.6.2
+amqp==5.3.1
+billiard==4.2.4
+vine==5.1.0
+redis==5.0.1
+
+# ── Celery CLI deps ────────────────────────────────────────
+click==8.4.2
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+prompt_toolkit==3.0.52
+wcwidth==0.8.2
+
+# ── Pydantic ───────────────────────────────────────────────
+pydantic==2.13.4
+pydantic_core==2.46.4
+annotated-types==0.7.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+
+# ── ML / Computer Vision ──────────────────────────────────
+# torch CPU-only (no GPU needed — avoids 2GB CUDA download)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+ultralytics
+opencv-python-headless
+numpy>=2.0
+
+# ── Monitoring ────────────────────────────────────────────
+flower==2.0.1
+prometheus_client==0.25.0
+humanize==4.16.0
+tornado==6.5.7
+
+# ── Misc ──────────────────────────────────────────────────
+python-dateutil==2.9.0.post0
+pytz==2026.2
+tzdata==2026.3
+tzlocal==5.4.4
+six==1.17.0
+packaging==26.2
+gunicorn==21.2.0

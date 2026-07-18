@@ -1,0 +1,11 @@
+{
+  "project_id": "092fe023-0fe4-43e1-9871-e020303a7696",
+  "project_name": "weaponscan-be",
+  "description": "weapponscan backend credentials",
+  "environment": "development",
+  "workspace_id": "e6ff8934-8fb7-46b9-8899-02682b666d2a",
+  "workspace_name": "go's Workspace",
+  "last_pull": "2026-07-18T01:35:18+01:00",
+  "last_push": "",
+  "storage_mode": 1
+}
