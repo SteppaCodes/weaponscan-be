@@ -1,11 +1,9 @@
 import threading
 from pathlib import Path
-from ultralytics import YOLO
-
 _model = None
 _model_lock = threading.Lock()
 
-def get_model(model_path: str = None) -> YOLO:
+def get_model(model_path: str = None) -> "YOLO":
     """
     Load and cache the YOLO model as a singleton.
     
@@ -39,6 +37,7 @@ def get_model(model_path: str = None) -> YOLO:
         if not path.exists():
             raise FileNotFoundError(f"Model weights not found at {path.absolute()}. ")
         
+        from ultralytics import YOLO
         print(f"Loading YOLO model from {path}...")
         _model = YOLO(str(path))
         print(f"Model loaded successfully. Classes: {_model.names}")
