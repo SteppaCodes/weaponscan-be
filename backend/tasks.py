@@ -51,6 +51,10 @@ def process_video_task(self, job_id: str):
     job_results_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        import torch
+        import gc
+        torch.set_num_threads(1)
+        
         model = get_model()
         extractor = FrameExtractor(job.file_path, skip_frames=3)
 
@@ -100,6 +104,11 @@ def process_video_task(self, job_id: str):
             if progress > last_progress:
                 JobService.update_progress(job_id, progress)
                 last_progress = progress
+
+            # Explicitly free memory for the processed frame
+            del results, boxes
+            if frame_info.index % 10 == 0:
+                gc.collect()
 
         if detection_buffer:
             _flush_detections(detection_buffer)
