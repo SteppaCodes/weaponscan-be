@@ -83,7 +83,10 @@ def validate_video_file(file_path: str) -> ValidationResult:
         duration = total_frames / fps
 
         if duration < MIN_DURATION:
-            return ValidationResult(valid=False, error=f"Video too long: {duration/60:.0f}min (max: 30min)")
+            return ValidationResult(valid=False, error=f"Video too short: duration is {duration:.1f}s (min: {MIN_DURATION}s)")
+        
+        if duration > MAX_DURATION:
+            return ValidationResult(valid=False, error=f"Video too long: duration is {duration/60:.1f}min (max: {MAX_DURATION/60:.1f}min)")
         
         ret, frame = cap.read()
         if not ret or frame is None:

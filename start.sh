@@ -3,6 +3,9 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+export YOLO_AUTOINSTALL=False
+
+
 echo "Starting Redis server..."
 redis-server --port 6379 --daemonize yes
 
