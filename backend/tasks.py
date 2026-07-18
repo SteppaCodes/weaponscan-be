@@ -56,7 +56,13 @@ def process_video_task(self, job_id: str):
         torch.set_num_threads(1)
         
         model = get_model()
-        extractor = FrameExtractor(job.file_path, skip_frames=3)
+        
+        # Calculate dynamic skip_frames to process ~2 frames per second
+        # (Speeds up CPU inference by 10x and prevents worker/request timeouts)
+        temp_extractor = FrameExtractor(job.file_path, skip_frames=1)
+        fps = temp_extractor.fps if temp_extractor.fps > 0 else 30
+        dynamic_skip = max(1, int(fps // 2))
+        extractor = FrameExtractor(job.file_path, skip_frames=dynamic_skip)
 
         detection_count = 0
         last_progress = 0
