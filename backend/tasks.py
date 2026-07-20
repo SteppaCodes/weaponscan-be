@@ -17,17 +17,6 @@ from .inference.frame_extractor import FrameExtractor
     queue='inference',
     acks_late=True,
     reject_on_worker_lost=True,
-    max_retries=3,
-    autoretry_for=(ConnectionError, TimeoutError),
-    retry_backoff=True,        # Exponential backoff
-    retry_backoff_max=600,     # Max 10 minutes between retries
-    retry_jitter=True,         # Add randomness to prevent thundering herd
-)
-@shared_task(
-    bind=True,
-    queue='inference',
-    acks_late=True,
-    reject_on_worker_lost=True,
     max_retries=1,
 )
 def process_video_task(self, job_id: str):
