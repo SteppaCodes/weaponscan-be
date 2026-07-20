@@ -178,7 +178,6 @@ def process_video_task(self, job_id: str):
                 JobService.update_progress(job_id, progress)
                 last_progress = progress
 
-            del results, boxes
             if processed_frames_count % 5 == 0:
                 gc.collect()
 
