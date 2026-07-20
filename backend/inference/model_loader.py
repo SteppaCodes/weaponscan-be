@@ -31,7 +31,7 @@ def get_model(model_path: str = None) -> "YOLO":
         
         if model_path is None:
             from django.conf import settings
-            model_path = getattr(settings, 'MODEL_PATH', 'models/best.onnx')
+            model_path = getattr(settings, 'MODEL_PATH', 'models/best.pt')
 
         path = Path(model_path)
         if not path.exists():
