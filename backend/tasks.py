@@ -62,16 +62,22 @@ def process_video_task(self, job_id: str):
     job_results_dir = Path(settings.MEDIA_ROOT) / 'results' / str(job_id)
     job_results_dir.mkdir(parents=True, exist_ok=True)
 
+    use_hf_api = getattr(settings, 'USE_HF_INFERENCE', False) or os.environ.get('USE_HF_INFERENCE', '').lower() == 'true' or bool(os.environ.get('HF_TOKEN'))
+
     try:
-        import torch
-        import gc
-        torch.set_num_threads(1)
-        print(f"[JOB MODEL {job_id[:8]}] Set PyTorch threads=1. Current RSS: {get_mem():.1f} MB", flush=True)
-        
-        print(f"[JOB MODEL {job_id[:8]}] Invoking get_model()...", flush=True)
-        model = get_model()
-        print(f"[JOB MODEL {job_id[:8]}] YOLO Model loaded successfully! Current RSS: {get_mem():.1f} MB", flush=True)
-        
+        if use_hf_api:
+            print(f"[JOB INFERENCE {job_id[:8]}] Mode: REMOTE HUGGING FACE INFERENCE API (Zero local model weights loaded)", flush=True)
+            from .inference.hf_client import HuggingFaceInferenceClient
+            hf_client = HuggingFaceInferenceClient(model_id="steppacodes/weaponscan")
+            model = None
+        else:
+            print(f"[JOB INFERENCE {job_id[:8]}] Mode: LOCAL ONNX MODEL INFERENCE", flush=True)
+            import torch
+            import gc
+            torch.set_num_threads(1)
+            model = get_model()
+            hf_client = None
+
         print(f"[JOB EXTRACT {job_id[:8]}] Initializing FrameExtractor...", flush=True)
         temp_extractor = FrameExtractor(job.file_path, skip_frames=1)
         fps = temp_extractor.fps if temp_extractor.fps > 0 else 30
@@ -100,35 +106,66 @@ def process_video_task(self, job_id: str):
                     flush=True
                 )
 
-            # Run inference
-            results = model.predict(
-                frame_info.frame,
-                conf=0.5,          # Confidence threshold
-                iou=0.45,          # NMS IoU threshold
-                imgsz=640,
-                verbose=False,
-            )
+            # Perform inference either remotely via HF API or locally via ONNX
+            if hf_client:
+                frame_detections = hf_client.predict_frame(frame_info.frame)
+                annotated = frame_info.frame.copy()
+                
+                if len(frame_detections) > 0:
+                    for d in frame_detections:
+                        x1, y1, x2, y2 = map(int, d['bbox'])
+                        label_text = f"{d['label']} {d['confidence']:.2f}"
+                        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                        cv2.putText(annotated, label_text, (x1, max(15, y1 - 5)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
-            boxes = results[0].boxes
+                        detection_buffer.append({
+                            'job_id': job_id,
+                            'timestamp': frame_info.timestamp,
+                            'frame_index': frame_info.index,
+                            'label': d['label'],
+                            'confidence': d['confidence'],
+                            'bbox': (x1, y1, x2, y2),
+                            'image_path': '', # set below
+                        })
+                        detection_count += 1
 
-            # Process detection
-            if len(boxes) > 0:
-                annotated = results[0].plot()
-                frame_filename = f"frame_{frame_info.index:06d}.jpg"
-                frame_path = job_results_dir / frame_filename
-                cv2.imwrite(str(frame_path), annotated)
+                    frame_filename = f"frame_{frame_info.index:06d}.jpg"
+                    frame_path = job_results_dir / frame_filename
+                    cv2.imwrite(str(frame_path), annotated)
+                    for d in detection_buffer[-len(frame_detections):]:
+                        d['image_path'] = str(frame_path)
 
-                for box in boxes:
-                    detection_buffer.append({
-                        'job_id': job_id,
-                        'timestamp': frame_info.timestamp,
-                        'frame_index': frame_info.index,
-                        'label': model.names[int(box.cls[0])],
-                        'confidence': float(box.conf[0]),
-                        'bbox': tuple(box.xyxy[0].cpu().numpy()),
-                        'image_path': str(frame_path),
-                    })
-                    detection_count += 1
+            else:
+                # Local ONNX inference
+                results = model.predict(
+                    frame_info.frame,
+                    conf=0.5,
+                    iou=0.45,
+                    imgsz=640,
+                    verbose=False,
+                )
+                boxes = results[0].boxes
+
+                if len(boxes) > 0:
+                    annotated = results[0].plot()
+                    frame_filename = f"frame_{frame_info.index:06d}.jpg"
+                    frame_path = job_results_dir / frame_filename
+                    cv2.imwrite(str(frame_path), annotated)
+
+                    for box in boxes:
+                        detection_buffer.append({
+                            'job_id': job_id,
+                            'timestamp': frame_info.timestamp,
+                            'frame_index': frame_info.index,
+                            'label': model.names[int(box.cls[0])],
+                            'confidence': float(box.conf[0]),
+                            'bbox': tuple(box.xyxy[0].cpu().numpy()),
+                            'image_path': str(frame_path),
+                        })
+                        detection_count += 1
+
+                del results, boxes
 
             if len(detection_buffer) >= 50:
                 _flush_detections(detection_buffer)
