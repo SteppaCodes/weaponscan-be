@@ -156,7 +156,9 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# CORS Settings
+# Modal Serverless GPU Endpoint
+MODAL_ENDPOINT_URL = config('MODAL_ENDPOINT_URL', default='https://steppacodes--weaponscan-inference-predict.modal.run')
+
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 

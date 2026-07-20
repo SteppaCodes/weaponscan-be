@@ -62,13 +62,19 @@ def process_video_task(self, job_id: str):
     job_results_dir = Path(settings.MEDIA_ROOT) / 'results' / str(job_id)
     job_results_dir.mkdir(parents=True, exist_ok=True)
 
+    modal_url = getattr(settings, 'MODAL_ENDPOINT_URL', os.environ.get('MODAL_ENDPOINT_URL', ''))
     use_hf_api = getattr(settings, 'USE_HF_INFERENCE', False) or os.environ.get('USE_HF_INFERENCE', '').lower() == 'true' or bool(os.environ.get('HF_TOKEN'))
 
     try:
-        if use_hf_api:
+        if modal_url:
+            print(f"[JOB INFERENCE {job_id[:8]}] Mode: REMOTE MODAL GPU WEB ENDPOINT (Zero local model weights loaded)", flush=True)
+            from .inference.modal_client import ModalInferenceClient
+            remote_client = ModalInferenceClient(endpoint_url=modal_url)
+            model = None
+        elif use_hf_api:
             print(f"[JOB INFERENCE {job_id[:8]}] Mode: REMOTE HUGGING FACE INFERENCE API (Zero local model weights loaded)", flush=True)
             from .inference.hf_client import HuggingFaceInferenceClient
-            hf_client = HuggingFaceInferenceClient(model_id="steppacodes/weaponscan")
+            remote_client = HuggingFaceInferenceClient(model_id="steppacodes/weaponscan")
             model = None
         else:
             print(f"[JOB INFERENCE {job_id[:8]}] Mode: LOCAL ONNX MODEL INFERENCE", flush=True)
@@ -76,7 +82,7 @@ def process_video_task(self, job_id: str):
             import gc
             torch.set_num_threads(1)
             model = get_model()
-            hf_client = None
+            remote_client = None
 
         print(f"[JOB EXTRACT {job_id[:8]}] Initializing FrameExtractor...", flush=True)
         temp_extractor = FrameExtractor(job.file_path, skip_frames=1)
@@ -106,9 +112,9 @@ def process_video_task(self, job_id: str):
                     flush=True
                 )
 
-            # Perform inference either remotely via HF API or locally via ONNX
-            if hf_client:
-                frame_detections = hf_client.predict_frame(frame_info.frame)
+            # Perform inference either remotely via Modal/HF API or locally via ONNX
+            if remote_client:
+                frame_detections = remote_client.predict_frame(frame_info.frame)
                 annotated = frame_info.frame.copy()
                 
                 if len(frame_detections) > 0:
