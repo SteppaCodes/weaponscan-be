@@ -51,6 +51,15 @@ def upload_video(request, video: UploadedFile = File(...)):
             {"error": "Invalid video", "detail": str(e)},
             status=422,
         )
+    except Exception as e:
+        import traceback
+        err_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"[API UPLOAD ERROR] {err_detail}", flush=True)
+        return api.create_response(
+            request,
+            {"error": "Upload failed", "detail": str(e)},
+            status=500,
+        )
 
 
 # ── Status Polling ──────────────────────────────────────
