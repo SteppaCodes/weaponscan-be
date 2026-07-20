@@ -33,7 +33,7 @@ class ModalInferenceClient:
             self.endpoint_url,
             headers={"Content-Type": "image/jpeg"},
             data=encoded_img.tobytes(),
-            timeout=15,
+            timeout=60,
         )
 
         if response.status_code != 200:
