@@ -35,12 +35,24 @@ def get_model(model_path: str = None) -> "YOLO":
 
         path = Path(model_path)
         if not path.exists():
-            raise FileNotFoundError(f"Model weights not found at {path.absolute()}. ")
+            print(f"Local model file '{path}' not found on disk. Downloading 'best.onnx' from Hugging Face Hub (steppacodes/weaponscan)...", flush=True)
+            try:
+                from huggingface_hub import hf_hub_download
+                downloaded_path = hf_hub_download(
+                    repo_id="steppacodes/weaponscan",
+                    filename="best.onnx",
+                )
+                path = Path(downloaded_path)
+                print(f"Hugging Face model downloaded successfully to: {path}", flush=True)
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"Model weights not found locally at {Path(model_path).absolute()} and failed to download from Hugging Face: {str(e)}"
+                )
         
         from ultralytics import YOLO
-        print(f"Loading YOLO model from {path}...")
+        print(f"Loading YOLO model from {path}...", flush=True)
         _model = YOLO(str(path))
-        print(f"Model loaded successfully. Classes: {_model.names}")
+        print(f"Model loaded successfully! Classes: {_model.names}", flush=True)
         
         return _model
     
