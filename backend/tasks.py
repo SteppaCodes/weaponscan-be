@@ -68,7 +68,6 @@ def process_video_task(self, job_id: str):
         else:
             print(f"[JOB INFERENCE {job_id[:8]}] Mode: LOCAL ONNX MODEL INFERENCE", flush=True)
             import torch
-            import gc
             torch.set_num_threads(1)
             model = get_model()
             remote_client = None
