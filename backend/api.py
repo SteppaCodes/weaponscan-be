@@ -130,6 +130,45 @@ def get_job_results(request, job_id: UUID):
     }
 
 
+# ── ZIP Archive Download ─────────────────────────────────
+
+@api.get(
+    "/jobs/{job_id}/download",
+    summary="Download all annotated frame images as a ZIP archive",
+)
+def download_job_frames_zip(request, job_id: UUID):
+    """
+    Generates and downloads a ZIP archive containing all annotated detection frames.
+    """
+    import io
+    import zipfile
+    from django.http import HttpResponse
+    from django.conf import settings
+
+    try:
+        job = JobService.get_job(job_id)
+    except JobNotFoundError:
+        return api.create_response(request, {"error": f"Job {job_id} not found"}, status=404)
+
+    results_dir = Path(settings.MEDIA_ROOT) / 'results' / str(job_id)
+    if not results_dir.exists():
+        return api.create_response(request, {"error": "No frames found for this job"}, status=404)
+
+    image_files = sorted(list(results_dir.glob('frame_*.jpg')))
+    if not image_files:
+        return api.create_response(request, {"error": "No annotated frames available in job results"}, status=404)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for img_path in image_files:
+            zip_file.write(img_path, arcname=img_path.name)
+
+    zip_buffer.seek(0)
+    response = HttpResponse(zip_buffer.getvalue(), content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename="weaponscan_results_{str(job_id)[:8]}.zip"'
+    return response
+
+
 # ── Job List ────────────────────────────────────────────
 
 @api.get(
