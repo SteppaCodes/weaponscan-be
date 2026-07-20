@@ -47,7 +47,7 @@ async def predict(request: Request):
     # Run inference
     results = model.predict(
         frame,
-        conf=0.45,  # Confidence threshold
+        conf=0.55,  # Confidence threshold (55% min confidence to filter out false positives)
         iou=0.45,   # NMS IoU threshold
         imgsz=640,
         verbose=False,
