@@ -23,29 +23,41 @@ from .inference.frame_extractor import FrameExtractor
     retry_backoff_max=600,     # Max 10 minutes between retries
     retry_jitter=True,         # Add randomness to prevent thundering herd
 )
+@shared_task(
+    bind=True,
+    queue='inference',
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=1,
+)
 def process_video_task(self, job_id: str):
     """
-    Main inference task. Runs on the 'inference' queue.
-    
-    Lifecycle:
-    1. Load model (singleton — instant after first load)
-    2. Extract frames from the video
-    3. Run YOLOv8m on each frame
-    4. Save detections to database
-    5. Save annotated frames to disk
-    6. Update progress periodically
-    
-    Error handling:
-    - Corrupt video → mark ERROR, no retry
-    - OOM → retry with exponential backoff
-    - Unknown error → retry up to max_retries
+    Main inference task with comprehensive debug logging and RSS memory tracking.
     """
+    import sys, resource, time
+    def get_mem():
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+
+    start_time = time.time()
+    print(f"\n[JOB START {job_id[:8]}] Starting video processing task. Initial RSS: {get_mem():.1f} MB", flush=True)
 
     try:
         job = JobService.get_job(job_id)
-    except Exception:
+        print(f"[JOB INFO {job_id[:8]}] Found job record: filename='{job.filename}', path='{job.file_path}'", flush=True)
+    except Exception as e:
+        err_msg = f"Failed to fetch job record from database: {str(e)}\n{traceback.format_exc()}"
+        print(f"[JOB ERROR {job_id[:8]}] {err_msg}", flush=True)
         return
     
+    if not os.path.exists(job.file_path):
+        err_msg = f"Video file missing on disk at path: {job.file_path}"
+        print(f"[JOB ERROR {job_id[:8]}] {err_msg}", flush=True)
+        JobService.mark_error(job_id, err_msg)
+        return
+
+    file_size_mb = os.path.getsize(job.file_path) / (1024 * 1024)
+    print(f"[JOB FILE {job_id[:8]}] Video file verified on disk ({file_size_mb:.2f} MB)", flush=True)
+
     JobService.update_progress(job_id, 0, status=JobStatus.PROCESSING)
     job_results_dir = Path(settings.MEDIA_ROOT) / 'results' / str(job_id)
     job_results_dir.mkdir(parents=True, exist_ok=True)
@@ -54,21 +66,40 @@ def process_video_task(self, job_id: str):
         import torch
         import gc
         torch.set_num_threads(1)
+        print(f"[JOB MODEL {job_id[:8]}] Set PyTorch threads=1. Current RSS: {get_mem():.1f} MB", flush=True)
         
+        print(f"[JOB MODEL {job_id[:8]}] Invoking get_model()...", flush=True)
         model = get_model()
+        print(f"[JOB MODEL {job_id[:8]}] YOLO Model loaded successfully! Current RSS: {get_mem():.1f} MB", flush=True)
         
-        # Calculate dynamic skip_frames to process ~2 frames per second
-        # (Speeds up CPU inference by 10x and prevents worker/request timeouts)
+        print(f"[JOB EXTRACT {job_id[:8]}] Initializing FrameExtractor...", flush=True)
         temp_extractor = FrameExtractor(job.file_path, skip_frames=1)
         fps = temp_extractor.fps if temp_extractor.fps > 0 else 30
         dynamic_skip = max(1, int(fps // 2))
         extractor = FrameExtractor(job.file_path, skip_frames=dynamic_skip)
+        
+        print(
+            f"[JOB EXTRACT {job_id[:8]}] Extractor ready: "
+            f"Resolution={extractor.width}x{extractor.height}, FPS={extractor.fps:.1f}, "
+            f"TotalFrames={extractor.total_frames}, DynamicSkip={dynamic_skip}",
+            flush=True
+        )
 
         detection_count = 0
         last_progress = 0
         detection_buffer = []
+        processed_frames_count = 0
 
         for frame_info in extractor.extract():
+            processed_frames_count += 1
+            
+            if processed_frames_count == 1 or processed_frames_count % 5 == 0:
+                print(
+                    f"[JOB INFERENCE {job_id[:8]}] Frame {frame_info.index}/{extractor.total_frames} "
+                    f"({processed_frames_count} processed). RSS: {get_mem():.1f} MB",
+                    flush=True
+                )
+
             # Run inference
             results = model.predict(
                 frame_info.frame,
@@ -103,7 +134,6 @@ def process_video_task(self, job_id: str):
                 _flush_detections(detection_buffer)
                 detection_buffer = []
 
-            # Prevent division by zero if total_frames is 0 or None
             total_frames = extractor.total_frames if extractor.total_frames > 0 else 1
             progress = int((frame_info.index / total_frames) * 100)
 
@@ -111,41 +141,30 @@ def process_video_task(self, job_id: str):
                 JobService.update_progress(job_id, progress)
                 last_progress = progress
 
-            # Explicitly free memory for the processed frame
             del results, boxes
-            if frame_info.index % 10 == 0:
+            if processed_frames_count % 5 == 0:
                 gc.collect()
 
         if detection_buffer:
             _flush_detections(detection_buffer)
 
+        elapsed = time.time() - start_time
         JobService.update_progress(job_id, 100, status=JobStatus.COMPLETE)
         print(
-            f"Job {job_id} complete: "
-            f"{detection_count} detections found"
+            f"[JOB SUCCESS {job_id[:8]}] Task completed in {elapsed:.2f}s! "
+            f"Found {detection_count} detections across {processed_frames_count} frames. Final RSS: {get_mem():.1f} MB",
+            flush=True
         )
     
     except cv2.error as e:
-        # Corrupt video — don't retry, it will always fail
-        JobService.mark_error(job_id, f"Video processing error: {str(e)}")
-        return
-    
-    except MemoryError:
-        # OOM — retry with backoff, might work if other tasks finish
-        JobService.update_progress(
-            job_id, last_progress, status=JobStatus.QUEUED
-        )
-        raise self.retry(exc=MemoryError("OOM during inference"))
+        err_msg = f"OpenCV Video Processing Error: {str(e)}\n{traceback.format_exc()}"
+        print(f"[JOB CRASH {job_id[:8]}] {err_msg}", flush=True)
+        JobService.mark_error(job_id, err_msg)
     
     except Exception as exc:
-        # Unknown error — log full traceback, then retry
-        error_msg = traceback.format_exc()
-        
-        if self.request.retries >= self.max_retries:
-            JobService.mark_error(job_id, error_msg[-500:])
-            return
-        
-        raise self.retry(exc=exc)
+        err_msg = f"Unhandled Task Error ({type(exc).__name__}): {str(exc)}\n{traceback.format_exc()}"
+        print(f"[JOB CRASH {job_id[:8]}] {err_msg}", flush=True)
+        JobService.mark_error(job_id, err_msg)
     
 def _flush_detections(buffer):
     """Bulk-insert detections for performance."""
