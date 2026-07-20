@@ -103,10 +103,30 @@ def get_job_results(request, job_id: UUID):
     
     detections = JobService.get_job_detections(job_id)
     
+    from pathlib import Path
+    formatted_detections = []
+    for d in detections:
+        fname = Path(d.image_path).name
+        rel_path = f"/media/results/{job_id}/{fname}"
+        abs_url = request.build_absolute_uri(rel_path)
+        formatted_detections.append({
+            "id": d.id,
+            "timestamp": d.timestamp,
+            "frame_index": d.frame_index,
+            "label": d.label,
+            "confidence": d.confidence,
+            "bbox_x1": d.bbox_x1,
+            "bbox_y1": d.bbox_y1,
+            "bbox_x2": d.bbox_x2,
+            "bbox_y2": d.bbox_y2,
+            "image_path": abs_url,
+            "image_url": abs_url,
+        })
+    
     return 200, {
         "job": job,
-        "detections": list(detections),
-        "total_detections": detections.count(),
+        "detections": formatted_detections,
+        "total_detections": len(formatted_detections),
     }
 
 

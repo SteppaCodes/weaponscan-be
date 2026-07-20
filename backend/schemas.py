@@ -38,6 +38,7 @@ class DetectionResponse(Schema):
     bbox_x2: float
     bbox_y2: float
     image_path: str
+    image_url: Optional[str] = None
 
 
 class JobResultsResponse(Schema):
