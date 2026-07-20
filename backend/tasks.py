@@ -1,5 +1,5 @@
 from celery import shared_task
-import os, cv2, traceback
+import os, cv2, gc, traceback
 from pathlib import Path
 from django.conf import settings
 from django.utils import timezone
